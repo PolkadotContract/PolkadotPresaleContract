@@ -1,107 +1,126 @@
 #![cfg_attr(not(feature = "std"), no_std, no_main)]
 
 #[ink::contract]
-mod token_factory {
-    use token_contract::TokenContractRef;
-    use token_contract::PSP22Metadata;
-    use ink::storage::Mapping as StorageHashMap;
-    use ink::prelude::string::String;
+mod hydra_contracts {
+    use token_factory::TokenFactoryRef;
+    // use token_contract::TokenContractRef;
     use ink::ToAccountId;
-    use ink::env::hash::Blake2x256;
+    use ink::storage::{
+        Mapping as StorageHashMap
+    };
+    use ink::prelude::string::String;
+    use ink::prelude::{
+        vec::Vec,
+    };
 
-
-
+    #[ink::scale_derive(Encode, Decode, TypeInfo)]
+    #[cfg_attr(
+        feature = "std",
+        derive(ink::storage::traits::StorageLayout)
+    )]
+    pub struct Project {
+        token: AccountId,
+        initial_token_amount: Balance,
+        raised: Balance,
+        start_time: u64,
+        end_time: u64,
+        creator: AccountId,
+        contributors: Vec<AccountId>,
+    }
     #[ink(storage)]
-    pub struct TokenFactory {
-        tokens: StorageHashMap<AccountId, TokenContractRef>,
-        owner: AccountId,
-        fee: Balance,
-        other_contract_code_hash: Hash
+    pub struct HydraContracts {
+        projects: StorageHashMap<u32, Project>,
+        last_project_id: u32,
+        token_factory: TokenFactoryRef,
     }
 
-    impl TokenFactory {
+    impl HydraContracts {
         #[ink(constructor)]
-        pub fn new(other_contract_code_hash: Hash, fee: Balance) -> Self {
-            let caller = Self::env().caller();
-
-            Self {
-                tokens: StorageHashMap::default(),
-                owner: caller,
-                fee,
-                other_contract_code_hash
-            }
+        pub fn new(token_factory_address: AccountId) -> Self {
+            let token_factory: TokenFactoryRef = ink::env::call::FromAccountId::from_account_id(token_factory_address);
+            Self { token_factory, last_project_id: 0, projects: StorageHashMap::new()}
         }
 
         #[ink(message)]
-        pub fn get_fee(&self) -> Balance {
-            self.fee
-        }
-
-        #[ink(message)]
-        pub fn create_token(
+        #[allow(clippy::too_many_arguments)]
+        pub fn create_presale(
             &mut self,
             initial_supply: Balance,
             name: String,
             symbol: String,
             decimals: u8,
-            logo_uri: String, // New parameter for logo URI
-        ) -> AccountId {
-            let transferred_fee = self.env().transferred_value();
-            if transferred_fee < self.fee {
-                panic!("Insufficient fee, required: 10 Polkadot tokens");
-            }
+            logo_uri: String,
+            initial_token_amount: Balance,
+            start_time: u64,
+            end_time: u64,
+        ) {
+            let project_id = self.last_project_id.checked_add(1).expect("Overflow detected in project_id calculation");
+            self.last_project_id = project_id;
 
-            let timestamp = Self::env().block_timestamp();
-            let input = timestamp.to_le_bytes();
-            
+            let token_address = self.token_factory.create_token(initial_supply, name, symbol, decimals, logo_uri);
 
-            let salt = Self::env().hash_encoded::<Blake2x256, _>(&input);
+            let project = Project {
+                token: token_address,
+                initial_token_amount,
+                raised: 0,
+                start_time,
+                end_time,
+                creator: self.env().caller(),
+                contributors: Vec::new(),
+            };
 
-            let token_contract = TokenContractRef::new(initial_supply, Some(name), Some(symbol), decimals, Some(logo_uri), self.env().caller())
-                .code_hash(self.other_contract_code_hash)
-                .endowment(0)
-                .salt_bytes(&salt.as_ref()[..4])
-                .instantiate();
-
-
-            let token_address = token_contract.to_account_id();
-
-            self.tokens.insert(token_address, &token_contract);
-
-            token_address
+            self.projects.insert(project_id, &project);
         }
 
+
         #[ink(message)]
-        pub fn withdraw(&mut self, amount: u128) -> Result<(), String> {
-            // Check if the caller is the owner (optional: remove or modify)
+        pub fn join_project_presale(
+            &mut self,
+            project_id: u32,
+            buy_token_amount: Balance,
+        ) {
             let caller = self.env().caller();
-            if caller != self.owner {
-                return Err("Only the owner can withdraw".into());
-            }
+            let mut project = self.projects.get(project_id).expect("Project not found");
 
-            // Ensure the contract has enough balance
-            let contract_balance = self.env().balance();
-            if contract_balance < amount {
-                return Err("Insufficient balance".into());
-            }
+            assert!(project.start_time <= self.env().block_timestamp(), "Presale not started");
+            assert!(project.end_time > self.env().block_timestamp(), "Presale ended");
 
-            // Perform the transfer of native tokens from the contract to the caller
-            let destination = caller;
-            let _ =  Self::env().transfer(destination, amount);
+            let cost = self.calculate_price(project.raised, buy_token_amount);
+            assert!(cost > self.env().transferred_value(), "Insufficient payment");
+            assert!(project.raised.checked_add(buy_token_amount) > Some(project.initial_token_amount), "Insufficient amount");
 
-            Ok(())
-        }
-
-        /// Check contract balance
-        #[ink(message)]
-        pub fn contract_balance(&self) -> u128 {
-            self.env().balance()
+            project.raised = project.raised.checked_add(buy_token_amount).expect("Invalid Operation");
+            project.contributors.push(caller);
         }
 
         #[ink(message)]
-        pub fn get_token_info(&self, token_address: AccountId) -> (String, String, u8, String) {
-            let token = self.tokens.get(token_address).expect("Token not found");
-            (token.token_name().expect("undefined"), token.token_symbol().expect("undefined"), token.token_decimals(), token.token_logo_uri().expect("undefined"))
+        pub fn calculate_price(
+            &self,
+            total_raised: Balance,
+            buy_token_amount: Balance,
+        ) -> Balance {
+            let k: Balance = 1;
+            let c: Balance = 0;
+
+            let current_price = k.checked_mul(total_raised).unwrap_or(0).checked_add(c).unwrap_or(0);
+            let next_price = k
+                .checked_mul(total_raised.checked_add(buy_token_amount).unwrap_or(0))
+                .unwrap_or(0)
+                .checked_add(c)
+                .unwrap_or(0);
+
+            current_price
+                .checked_add(next_price)
+                .unwrap_or(0)
+                .checked_mul(buy_token_amount)
+                .unwrap_or(0)
+                .checked_div(2)
+                .unwrap_or(0)
+        }
+
+        #[ink(message)]
+        pub fn get(&self) -> AccountId {
+            self.token_factory.to_account_id()
         }
     }
 }

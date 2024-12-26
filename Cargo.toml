@@ -1,17 +1,15 @@
 [package]
-name = "token-factory"
+name = "hydra_contracts"
 version = "0.1.0"
 authors = ["[your_name] <[your_email]>"]
 edition = "2021"
-publish = false
 
 [dependencies]
 ink = { version = "5.1.0", default-features = false }
-# Note: We **need** to specify the `ink-as-dependency` feature.
-#
-# If we don't we will end up with linking errors!
-token-contract = { path = "token-contract", default-features = false, features = ["ink-as-dependency"] }
-
+#token-contract = { path = "token-contract", default-features = false, features = ["ink-as-dependency"] }
+token-factory = { path = "token-factory", default-features = false, features = ["ink-as-dependency"] }
+#ink_lang = "3.4.0"
+#ink_env = "5.1.0"
 
 [dev-dependencies]
 ink_e2e = { version = "5.1.0" }
@@ -23,7 +21,9 @@ path = "lib.rs"
 default = ["std"]
 std = [
     "ink/std",
-    "token-contract/std",
+    #"ink_env/std",
+#    "token-contract/std",
+    "token-factory/std",
 ]
 ink-as-dependency = []
 e2e-tests = []
