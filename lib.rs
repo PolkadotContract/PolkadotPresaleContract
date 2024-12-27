@@ -20,8 +20,10 @@ mod hydra_contracts {
     )]
     pub struct Project {
         token: AccountId,
-        initial_token_amount: Balance,
-        raised: Balance,
+        total_presale_token_amount: Balance,
+        presaled_amount: Balance,
+        intended_raise_amount: Balance,
+        raised_amount: Balance,
         start_time: u64,
         end_time: u64,
         creator: AccountId,
@@ -50,7 +52,8 @@ mod hydra_contracts {
             symbol: String,
             decimals: u8,
             logo_uri: String,
-            initial_token_amount: Balance,
+            total_presale_token_amount: Balance,
+            intended_raise_amount: Balance,
             start_time: u64,
             end_time: u64,
         ) {
@@ -61,8 +64,10 @@ mod hydra_contracts {
 
             let project = Project {
                 token: token_address,
-                initial_token_amount,
-                raised: 0,
+                total_presale_token_amount,
+                presaled_amount: 0,
+                intended_raise_amount,
+                raised_amount: 0,
                 start_time,
                 end_time,
                 creator: self.env().caller(),
@@ -85,26 +90,27 @@ mod hydra_contracts {
             assert!(project.start_time <= self.env().block_timestamp(), "Presale not started");
             assert!(project.end_time > self.env().block_timestamp(), "Presale ended");
 
-            let cost = self.calculate_price(project.raised, buy_token_amount);
-            assert!(cost > self.env().transferred_value(), "Insufficient payment");
-            assert!(project.raised.checked_add(buy_token_amount) > Some(project.initial_token_amount), "Insufficient amount");
+            let cost = self.calculate_price(project.presaled_amount, buy_token_amount);
+            assert!(cost < self.env().transferred_value(), "Insufficient payment");
+            assert!(project.presaled_amount.checked_add(buy_token_amount) < Some(project.total_presale_token_amount), "Insufficient amount");
 
-            project.raised = project.raised.checked_add(buy_token_amount).expect("Invalid Operation");
+            project.presaled_amount = project.presaled_amount.checked_add(buy_token_amount).expect("Invalid Operation");
+            project.raised_amount = project.raised_amount.checked_add(cost).expect("Invalid Operation");
             project.contributors.push(caller);
         }
 
         #[ink(message)]
         pub fn calculate_price(
             &self,
-            total_raised: Balance,
+            presaled_amount: Balance,
             buy_token_amount: Balance,
         ) -> Balance {
             let k: Balance = 1;
             let c: Balance = 0;
 
-            let current_price = k.checked_mul(total_raised).unwrap_or(0).checked_add(c).unwrap_or(0);
+            let current_price = k.checked_mul(presaled_amount).unwrap_or(0).checked_add(c).unwrap_or(0);
             let next_price = k
-                .checked_mul(total_raised.checked_add(buy_token_amount).unwrap_or(0))
+                .checked_mul(presaled_amount.checked_add(buy_token_amount).unwrap_or(0))
                 .unwrap_or(0)
                 .checked_add(c)
                 .unwrap_or(0);
