@@ -1,7 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std, no_main)]
 
 #[ink::contract]
-mod hydra_contracts {
+mod polkadot_presale_contract {
     use token_factory::TokenFactoryRef;
     use token_lock::TokenLockRef;
     use ink::storage::{
@@ -31,14 +31,14 @@ mod hydra_contracts {
         is_successful: bool,
     }
     #[ink(storage)]
-    pub struct HydraContracts {
+    pub struct PolkadotPresaleContract {
         projects: StorageHashMap<u32, Project>,
         last_project_id: u32,
         token_factory: TokenFactoryRef,
         token_lock: TokenLockRef,
     }
 
-    impl HydraContracts {
+    impl PolkadotPresaleContract {
         #[ink(constructor)]
         pub fn new(token_factory_address: AccountId, token_lock_address: AccountId) -> Self {
             let token_factory: TokenFactoryRef = ink::env::call::FromAccountId::from_account_id(token_factory_address);

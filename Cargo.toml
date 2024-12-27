@@ -1,5 +1,5 @@
 [package]
-name = "hydra_contracts"
+name = "polkadot_presale_contract"
 version = "0.1.0"
 authors = ["[your_name] <[your_email]>"]
 edition = "2021"
@@ -23,7 +23,7 @@ path = "lib.rs"
 default = ["std"]
 std = [
     "ink/std",
-    #"ink_env/std",
+#   "ink_env/std",
 #    "token-contract/std",
     "token-factory/std",
     "token-lock/std",
